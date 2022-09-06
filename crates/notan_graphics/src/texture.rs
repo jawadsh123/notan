@@ -16,13 +16,21 @@ pub struct TextureRead {
 }
 
 #[derive(Debug, Clone)]
+pub enum TextureSource<'a> {
+    Bytes(&'a [u8]),
+
+    #[cfg(target_arch = "wasm32")]
+    HtmlImageElement(&'a web_sys::HtmlImageElement),
+}
+
+#[derive(Debug, Clone)]
 pub struct TextureUpdate<'a> {
     pub x_offset: i32,
     pub y_offset: i32,
     pub width: i32,
     pub height: i32,
     pub format: TextureFormat,
-    pub bytes: &'a [u8],
+    pub source: TextureSource<'a>,
 }
 
 #[derive(Clone, Debug)]
@@ -473,7 +481,7 @@ pub struct TextureUpdater<'a> {
     width: i32,
     height: i32,
     format: TextureFormat,
-    bytes: Option<&'a [u8]>,
+    source: Option<TextureSource<'a>>,
 }
 
 impl<'a> TextureUpdater<'a> {
@@ -492,7 +500,7 @@ impl<'a> TextureUpdater<'a> {
             width,
             height,
             format,
-            bytes: None,
+            source: None,
         }
     }
 
@@ -520,8 +528,8 @@ impl<'a> TextureUpdater<'a> {
         self
     }
 
-    pub fn with_data(mut self, bytes: &'a [u8]) -> Self {
-        self.bytes = Some(bytes);
+    pub fn with_data(mut self, source: TextureSource<'a>) -> Self {
+        self.source = Some(source);
         self
     }
 
@@ -534,11 +542,11 @@ impl<'a> TextureUpdater<'a> {
             width,
             height,
             format,
-            bytes,
+            source,
         } = self;
 
-        let bytes =
-            bytes.ok_or_else(|| "You need to provide bytes to update a texture".to_string())?;
+        let source =
+            source.ok_or_else(|| "You need to provide source to update a texture".to_string())?;
 
         let info = TextureUpdate {
             x_offset,
@@ -546,7 +554,7 @@ impl<'a> TextureUpdater<'a> {
             width,
             height,
             format,
-            bytes,
+            source,
         };
 
         device.inner_update_texture(texture, &info)

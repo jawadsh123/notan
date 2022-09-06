@@ -506,23 +506,69 @@ impl DeviceBackend for GlowBackend {
         Ok(self.render_target_count)
     }
 
+    #[cfg(target_arch = "wasm32")]
+    fn update_texture(&mut self, texture: u64, opts: &TextureUpdate) -> Result<(), String> {
+        use texture::texture_internal_format;
+
+        match self.textures.get(&texture) {
+            Some(texture) => {
+                unsafe {
+                    self.gl
+                        .bind_texture(glow::TEXTURE_2D, Some(texture.texture));
+
+                    match opts.source {
+                        TextureSource::Bytes(bytes) => self.gl.tex_sub_image_2d(
+                            glow::TEXTURE_2D,
+                            0,
+                            opts.x_offset,
+                            opts.y_offset,
+                            opts.width,
+                            opts.height,
+                            texture_format(&opts.format), // 3d texture needs another value?
+                            glow::UNSIGNED_BYTE, // todo UNSIGNED SHORT FOR DEPTH (3d) TEXTURES
+                            PixelUnpackData::Slice(bytes),
+                        ),
+                        TextureSource::HtmlImageElement(image_el) => {
+                            self.gl.tex_image_2d_with_html_image(
+                                glow::TEXTURE_2D,
+                                0,
+                                texture_internal_format(&opts.format) as _,
+                                texture_format(&opts.format), // 3d texture needs another value?
+                                glow::UNSIGNED_BYTE,
+                                image_el,
+                            )
+                        }
+                    }
+                    // todo unbind texture?
+                    Ok(())
+                }
+            }
+            _ => Err("Invalid texture id".to_string()),
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn update_texture(&mut self, texture: u64, opts: &TextureUpdate) -> Result<(), String> {
         match self.textures.get(&texture) {
             Some(texture) => {
                 unsafe {
                     self.gl
                         .bind_texture(glow::TEXTURE_2D, Some(texture.texture));
-                    self.gl.tex_sub_image_2d(
-                        glow::TEXTURE_2D,
-                        0,
-                        opts.x_offset,
-                        opts.y_offset,
-                        opts.width,
-                        opts.height,
-                        texture_format(&opts.format), // 3d texture needs another value?
-                        glow::UNSIGNED_BYTE,          // todo UNSIGNED SHORT FOR DEPTH (3d) TEXTURES
-                        PixelUnpackData::Slice(opts.bytes),
-                    );
+
+                    match opts.source {
+                        TextureSource::Bytes(bytes) => self.gl.tex_sub_image_2d(
+                            glow::TEXTURE_2D,
+                            0,
+                            opts.x_offset,
+                            opts.y_offset,
+                            opts.width,
+                            opts.height,
+                            texture_format(&opts.format), // 3d texture needs another value?
+                            glow::UNSIGNED_BYTE, // todo UNSIGNED SHORT FOR DEPTH (3d) TEXTURES
+                            PixelUnpackData::Slice(bytes),
+                        ),
+                    }
+
                     // todo unbind texture?
                     Ok(())
                 }
