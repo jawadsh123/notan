@@ -21,6 +21,10 @@ pub enum TextureSource<'a> {
 
     #[cfg(target_arch = "wasm32")]
     HtmlImageElement(&'a web_sys::HtmlImageElement),
+
+    #[cfg(target_arch = "wasm32")]
+    #[cfg(web_sys_unstable_apis)]
+    VideoFrame(&'a web_sys::VideoFrame),
 }
 
 #[derive(Debug, Clone)]

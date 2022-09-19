@@ -538,6 +538,18 @@ impl DeviceBackend for GlowBackend {
                                 image_el,
                             )
                         }
+
+                        #[cfg(web_sys_unstable_apis)]
+                        TextureSource::VideoFrame(video_frame) => {
+                            self.gl.tex_image_2d_with_video_frame(
+                                glow::TEXTURE_2D,
+                                0,
+                                texture_internal_format(&opts.format) as _,
+                                texture_format(&opts.format), // 3d texture needs another value?
+                                glow::UNSIGNED_BYTE,
+                                video_frame,
+                            )
+                        }
                     }
                     // todo unbind texture?
                     Ok(())
