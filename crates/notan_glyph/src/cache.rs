@@ -1,4 +1,4 @@
-use notan_app::{Texture, TextureFilter, TextureFormat, TextureSource};
+use notan_app::{Texture, TextureFilter, TextureFormat};
 use notan_graphics::Device;
 
 pub struct Cache {
@@ -37,7 +37,7 @@ impl Cache {
             .with_y_offset(oy as _)
             .with_width(w as _)
             .with_height(h as _)
-            .with_data(TextureSource::Bytes(data))
+            .with_data(data)
             .update()
     }
 

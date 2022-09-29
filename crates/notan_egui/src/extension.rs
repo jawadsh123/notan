@@ -4,7 +4,7 @@ use crate::TextureId;
 use egui::Rect;
 use notan_app::{
     BlendFactor, BlendMode, Buffer, CullMode, Device, Graphics, Pipeline, RenderTexture,
-    ShaderSource, Texture, TextureFilter, TextureFormat, TextureSource, VertexFormat, VertexInfo,
+    ShaderSource, Texture, TextureFilter, TextureFormat, VertexFormat, VertexInfo,
 };
 use std::collections::HashMap;
 
@@ -460,7 +460,7 @@ fn update_texture(
 ) -> Result<(), String> {
     device
         .update_texture(texture)
-        .with_data(TextureSource::Bytes(data))
+        .with_data(data)
         .with_x_offset(x)
         .with_y_offset(y)
         .with_width(width)
