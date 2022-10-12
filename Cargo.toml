@@ -22,7 +22,7 @@ lto = true
 notan_core = { path = "crates/notan_core", version = "0.7.0" }
 notan_input = { path = "crates/notan_input", version = "0.7.0" }
 notan_app = { path = "crates/notan_app", version = "0.7.0" }
-notan_macro = { path = "crates/notan_macro", version = "0.7.0" }
+notan_macro = { path = "crates/notan_macro", version = "0.7.0", default-features = false }
 notan_math = { path = "crates/notan_math", version = "0.7.0" }
 notan_graphics = { path = "crates/notan_graphics", version = "0.7.0" }
 notan_utils = { path = "crates/notan_utils", version = "0.7.0" }
@@ -40,7 +40,7 @@ notan_random = { path = "crates/notan_random", version = "0.7.0", optional = tru
 members = ["crates/*"]
 
 [features]
-default = ["backend", "log", "draw", "random"]
+default = ["backend", "log", "draw", "random", "glsl-to-spirv"]
 backend = ["notan_backend"]
 log = ["notan_log"]
 glyph = ["notan_glyph"]
@@ -55,6 +55,8 @@ clipboard = ["notan_app/clipboard", "notan_backend?/clipboard", "notan_egui?/cli
 save_file = ["notan_utils/save_file"]
 texture_to_file = ["notan_graphics/texture_to_file"]
 random = ["notan_random"]
+glsl-to-spirv = ["notan_macro/glsl-to-spirv"]
+shaderc = ["notan_macro/shaderc"]
 
 [dev-dependencies]
 egui_demo_lib = "0.18.0"
