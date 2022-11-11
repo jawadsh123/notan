@@ -39,13 +39,14 @@ pub struct GlowBackend {
     buffers: HashMap<u64, InnerBuffer>,
     textures: HashMap<u64, InnerTexture>,
     render_targets: HashMap<u64, InnerRenderTexture>,
-    using_indices: bool,
+    using_indices: Option<IndexFormat>,
     api_name: String,
     current_pipeline: u64,
     limits: Limits,
     current_uniforms: Vec<UniformLocation>,
     drawing_srgba: bool,
     drawing_to_render_texture: bool,
+    render_texture_mipmaps: bool,
 }
 
 impl GlowBackend {
@@ -105,13 +106,14 @@ impl GlowBackend {
             buffers: HashMap::new(),
             textures: HashMap::new(),
             render_targets: HashMap::new(),
-            using_indices: false,
+            using_indices: None,
             api_name: api.to_string(),
             current_pipeline: 0,
             limits,
             current_uniforms: vec![],
             drawing_srgba: false,
             drawing_to_render_texture: false,
+            render_texture_mipmaps: false,
         })
     }
 }
@@ -162,6 +164,7 @@ impl GlowBackend {
             Some(rt) => {
                 rt.bind(&self.gl);
                 self.drawing_to_render_texture = true;
+                self.render_texture_mipmaps = rt.use_mipmaps;
                 (rt.size.0, rt.size.1, 1.0)
             }
             None => {
@@ -169,6 +172,7 @@ impl GlowBackend {
                     self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                 }
                 self.drawing_to_render_texture = false;
+                self.render_texture_mipmaps = false;
                 (self.size.0, self.size.1, self.dpi)
             }
         };
@@ -208,6 +212,10 @@ impl GlowBackend {
 
     fn end(&mut self) {
         unsafe {
+            // generate mipmap for the framebuffer texture if needed
+            if self.drawing_to_render_texture && self.render_texture_mipmaps {
+                self.gl.generate_mipmap(glow::TEXTURE_2D);
+            }
             self.disable_srgba();
             self.gl.disable(glow::SCISSOR_TEST);
             self.gl.bind_buffer(glow::ARRAY_BUFFER, None);
@@ -217,8 +225,9 @@ impl GlowBackend {
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
         }
 
-        self.using_indices = false;
+        self.using_indices = None;
         self.drawing_to_render_texture = false;
+        self.render_texture_mipmaps = false;
     }
 
     fn clean_pipeline(&mut self, id: u64) {
@@ -230,7 +239,7 @@ impl GlowBackend {
     fn set_pipeline(&mut self, id: u64, options: &PipelineOptions) {
         if let Some(pip) = self.pipelines.get(&id) {
             pip.bind(&self.gl, options);
-            self.using_indices = false;
+            self.using_indices = None;
             self.current_pipeline = id;
             self.current_uniforms = pip.uniform_locations.clone();
         }
@@ -248,8 +257,8 @@ impl GlowBackend {
                 )
             }
             let reset_attrs = match &buffer.kind {
-                Kind::Index => {
-                    self.using_indices = true;
+                Kind::Index(format) => {
+                    self.using_indices = Some(*format);
                     false
                 }
                 Kind::Uniform(_slot, _name) => {
@@ -329,32 +338,37 @@ impl GlowBackend {
 
     fn draw(&mut self, primitive: &DrawPrimitive, offset: i32, count: i32) {
         unsafe {
-            if self.using_indices {
-                self.gl
-                    .draw_elements(primitive.to_glow(), count, glow::UNSIGNED_INT, offset * 4);
-            } else {
-                self.gl.draw_arrays(primitive.to_glow(), offset, count);
+            match self.using_indices {
+                None => self.gl.draw_arrays(primitive.to_glow(), offset, count),
+                Some(format) => {
+                    self.gl
+                        .draw_elements(primitive.to_glow(), count, format.to_glow(), offset * 4)
+                }
             }
         }
     }
     fn draw_instanced(&mut self, primitive: &DrawPrimitive, offset: i32, count: i32, length: i32) {
         unsafe {
-            if self.using_indices {
-                self.gl.draw_elements_instanced(
+            match self.using_indices {
+                None => self
+                    .gl
+                    .draw_arrays_instanced(primitive.to_glow(), offset, count, length),
+                Some(format) => self.gl.draw_elements_instanced(
                     primitive.to_glow(),
                     count,
-                    glow::UNSIGNED_INT,
+                    format.to_glow(),
                     offset,
                     length,
-                );
-            } else {
-                self.gl
-                    .draw_arrays_instanced(primitive.to_glow(), offset, count, length);
+                ),
             }
         }
     }
 
-    fn add_inner_texture(&mut self, tex: TextureKey, info: &TextureInfo) -> Result<u64, String> {
+    pub fn add_inner_texture(
+        &mut self,
+        tex: TextureKey,
+        info: &TextureInfo,
+    ) -> Result<u64, String> {
         let inner_texture = InnerTexture::new(tex, info)?;
         self.texture_count += 1;
         self.textures.insert(self.texture_count, inner_texture);
@@ -412,8 +426,8 @@ impl DeviceBackend for GlowBackend {
         Ok(self.buffer_count)
     }
 
-    fn create_index_buffer(&mut self) -> Result<u64, String> {
-        let mut inner_buffer = InnerBuffer::new(&self.gl, Kind::Index, true)?;
+    fn create_index_buffer(&mut self, format: IndexFormat) -> Result<u64, String> {
+        let mut inner_buffer = InnerBuffer::new(&self.gl, Kind::Index(format), true)?;
         inner_buffer.bind(&self.gl, Some(self.current_pipeline), false);
         self.buffer_count += 1;
         self.buffers.insert(self.buffer_count, inner_buffer);
@@ -536,6 +550,8 @@ impl DeviceBackend for GlowBackend {
     ) -> Result<(), String> {
         match self.textures.get(&texture) {
             Some(texture) => {
+                let use_mipmaps = texture.use_mipmaps;
+
                 unsafe {
                     self.gl
                         .bind_texture(glow::TEXTURE_2D, Some(texture.texture));
@@ -553,11 +569,16 @@ impl DeviceBackend for GlowBackend {
                                 glow::UNSIGNED_BYTE, // todo UNSIGNED SHORT FOR DEPTH (3d) TEXTURES
                                 PixelUnpackData::Slice(bytes),
                             );
-
-                            Ok(())
                         }
-                        TextureUpdaterSourceKind::Raw(source) => source.update(self, opts),
+                        TextureUpdaterSourceKind::Raw(source) => source.update(self, opts)?,
                     }
+
+                    // if texture has mipmaps enabled re-generate them after the update
+                    if use_mipmaps {
+                        self.gl.generate_mipmap(glow::TEXTURE_2D);
+                    }
+
+                    Ok(())
                 }
             }
             _ => Err("Invalid texture id".to_string()),

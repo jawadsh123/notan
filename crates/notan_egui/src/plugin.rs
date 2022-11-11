@@ -6,18 +6,31 @@ use notan_app::{
     App, AppFlow, ClearOptions, Color, CursorIcon as NCursorIcon, Device, Event, ExtContainer,
     GfxExtension, GfxRenderer, Graphics, Plugin, Plugins, RenderTexture,
 };
+
 use std::cell::RefCell;
 
 #[cfg(feature = "links")]
 use egui::output::OpenUrl;
 
-#[derive(Default)]
 pub struct EguiPlugin {
     ctx: egui::Context,
     raw_input: egui::RawInput,
     platform_output: Option<egui::PlatformOutput>,
     latest_evt_was_touch: bool,
     needs_repaint: bool,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for EguiPlugin {
+    fn default() -> Self {
+        Self {
+            ctx: Default::default(),
+            raw_input: Default::default(),
+            platform_output: Default::default(),
+            latest_evt_was_touch: Default::default(),
+            needs_repaint: Default::default(),
+        }
+    }
 }
 
 impl EguiPlugin {
@@ -31,10 +44,12 @@ impl EguiPlugin {
 
         let egui::FullOutput {
             platform_output,
-            needs_repaint,
+            repaint_after,
             textures_delta,
             shapes,
         } = self.ctx.run(new_input, run_ui);
+
+        let needs_repaint = repaint_after.is_zero();
 
         // On post frame needs repaint is set to false
         // set it again if true after a egui output.
@@ -115,19 +130,13 @@ impl Plugin for EguiPlugin {
         _assets: &mut Assets,
         event: &Event,
     ) -> Result<AppFlow, String> {
-        let command_modifier = if cfg!(target_arch = "macos") {
-            app.keyboard.logo()
-        } else if cfg!(target_arch = "wasm32") {
-            app.keyboard.ctrl() || app.keyboard.logo()
-        } else {
-            app.keyboard.ctrl()
-        };
-
         let mac_cmd = if cfg!(target_os = "macos") || cfg!(target_arch = "wasm32") {
             app.keyboard.logo()
         } else {
             false
         };
+
+        let command_modifier = mac_cmd || app.keyboard.ctrl();
 
         let modifiers = egui::Modifiers {
             alt: app.keyboard.alt(),
@@ -197,6 +206,7 @@ impl Plugin for EguiPlugin {
                     })
                 }
             }
+
             Event::KeyUp { key } => {
                 if let Some(key) = to_egui_key(key) {
                     self.add_event(egui::Event::Key {
@@ -212,12 +222,9 @@ impl Plugin for EguiPlugin {
                 }
             }
 
-            #[cfg(feature = "clipboard")]
             Event::Copy => self.add_event(egui::Event::Copy),
-            #[cfg(feature = "clipboard")]
             Event::Cut => self.add_event(egui::Event::Cut),
-            #[cfg(feature = "clipboard")]
-            Event::Paste(text) => self.add_event(egui::Event::Paste(text.clone())),
+            Event::Paste(text) => self.add_event(egui::Event::Paste(text.into())),
 
             #[cfg(feature = "drop_files")]
             Event::DragEnter { path, mime, .. } => {
@@ -305,6 +312,8 @@ impl Plugin for EguiPlugin {
             let egui::PlatformOutput {
                 cursor_icon,
                 open_url,
+
+                copied_text,
                 ..
             } = platform_output;
 
@@ -326,6 +335,10 @@ impl Plugin for EguiPlugin {
                 } else {
                     app.open_link(&url);
                 }
+            }
+
+            if !copied_text.is_empty() {
+                app.backend.set_clipboard_text(&copied_text);
             }
         }
 
